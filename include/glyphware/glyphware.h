@@ -19,5 +19,6 @@
 #include "Library.h"
 #include "Face.h"
 #include "Shaper.h"
+#include "Registry.h"
 
 #endif // GLYPHWARE_H

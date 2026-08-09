@@ -25,6 +25,13 @@ static std::shared_ptr<FontBlob> readFile(const std::string& path) {
     return std::make_shared<OwnedFontBlob>(std::move(bytes));
 }
 
+// A trivial host loader: the font "key" is a filesystem path.
+struct DiskLoader : FontLoader {
+    std::shared_ptr<FontBlob> load(std::string_view key) override {
+        return readFile(std::string(key));
+    }
+};
+
 struct CountingSink : OutlineSink {
     int moves = 0, lines = 0, quads = 0, cubics = 0, closes = 0;
     void moveTo(float, float) override { ++moves; }
@@ -105,6 +112,38 @@ int main(int argc, char** argv) {
     for (auto& g : shaped) std::printf(" %.1f", g.xAdvance);
     std::printf("\n");
     if (shaped.empty()) { std::fprintf(stderr, "FAIL: shaping produced no glyphs\n"); return 8; }
+
+    // Registry + rich query
+    {
+        auto loader = std::make_shared<DiskLoader>();
+        Registry reg(loader);
+        reg.registerKey(used, 0, {"smoke-alias"});
+
+        FontQuery q;
+        q.name = d.family;
+        q.weight = Weight::Regular;
+        auto ranked = reg.query(q);
+        std::printf("  registry: entries=%zu  query(name='%s',weight=Regular) -> %zu\n",
+                    reg.size(), d.family.c_str(), ranked.size());
+        if (ranked.empty()) { std::fprintf(stderr, "FAIL: registry name query empty\n"); return 9; }
+
+        FontQuery qcov;      qcov.containsText = "Hi";               // must be covered
+        FontQuery qbad;      qbad.containsCodepoints = {0x10FFFD};   // almost certainly absent
+        auto covered = reg.query(qcov);
+        auto uncovered = reg.query(qbad);
+        std::printf("  registry: containsText('Hi') -> %zu ; containsCodepoints(U+10FFFD) -> %zu\n",
+                    covered.size(), uncovered.size());
+        if (covered.empty()) { std::fprintf(stderr, "FAIL: coverage dropped a covering font\n"); return 10; }
+        if (!uncovered.empty()) { std::fprintf(stderr, "FAIL: coverage kept a non-covering font\n"); return 11; }
+
+        auto qf = reg.queryFace(q);
+        if (!qf) { std::fprintf(stderr, "FAIL: queryFace null\n"); return 12; }
+        std::printf("  registry: queryFace -> family='%s'\n", qf->descriptor().family.c_str());
+
+        if (reg.findByName("smoke-alias").empty()) {
+            std::fprintf(stderr, "FAIL: alias lookup\n"); return 13;
+        }
+    }
 
     std::printf("PASS\n");
     return 0;

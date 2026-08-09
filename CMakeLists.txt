@@ -24,6 +24,7 @@ add_library(glyphware
   src/Library.cpp
   src/Face.cpp
   src/Shaper.cpp
+  src/Registry.cpp
 )
 add_library(glyphware::glyphware ALIAS glyphware)
 
