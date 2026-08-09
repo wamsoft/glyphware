@@ -240,7 +240,16 @@ GlyphId Face::glyphIndex(char32_t cp) const {
 
 bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out) const {
     LibraryLock lock(*lib_);
-    if (FT_Load_Glyph(face_, gid, FT_LOAD_DEFAULT) != 0) return false;
+    // For scalable fonts ignore embedded bitmap strikes so the advance is the
+    // OUTLINE advance — consistent with glyphBitmap() (which renders outlines for
+    // text via FT_LOAD_NO_BITMAP) and with the classic FreeType path. Without
+    // this, a font with an embedded bitmap strike at a given ppem (e.g. MS
+    // PGothic at 22px) would report the strike's advance while the glyph renders
+    // as an outline, so text advances and glyph shapes disagree. Bitmap-only
+    // fonts (CBDT color emoji) keep the strike and are scaled below.
+    FT_Int32 flags = FT_LOAD_DEFAULT;
+    if (face_->face_flags & FT_FACE_FLAG_SCALABLE) flags |= FT_LOAD_NO_BITMAP;
+    if (FT_Load_Glyph(face_, gid, flags) != 0) return false;
     const FT_Glyph_Metrics& m = face_->glyph->metrics;
     // fixed-strike (bitmap-only, e.g. CBDT color emoji) fonts report metrics at
     // the strike ppem; scale to the requested pixel size to match glyphBitmap().
