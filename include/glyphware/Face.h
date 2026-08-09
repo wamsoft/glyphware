@@ -108,6 +108,11 @@ public:
     // returned buffer is owned by this Face and valid until the next render call.
     bool glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out, bool bold = false, bool italic = false);
 
+    // Set a 2x2 transform (FreeType y-up coords) applied to subsequently loaded
+    // glyphs — for rotated/sheared text. clearTransform() resets to identity.
+    void setTransform(double xx, double xy, double yx, double yy);
+    void clearTransform();
+
 private:
     Face() = default;
     std::shared_ptr<Library> lib_;

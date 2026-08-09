@@ -13,6 +13,7 @@
 #include <hb-ft.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace glyphware {
@@ -302,6 +303,21 @@ bool Face::glyphOutline(GlyphId gid, OutlineSink& sink, bool bold, bool italic) 
     funcs.delta = 0;
     DecompCtx ctx{&sink};
     return FT_Outline_Decompose(&face_->glyph->outline, &funcs, &ctx) == 0;
+}
+
+void Face::setTransform(double xx, double xy, double yx, double yy) {
+    LibraryLock lock(*lib_);
+    FT_Matrix m;
+    m.xx = static_cast<FT_Fixed>(std::lround(xx * 65536.0));
+    m.xy = static_cast<FT_Fixed>(std::lround(xy * 65536.0));
+    m.yx = static_cast<FT_Fixed>(std::lround(yx * 65536.0));
+    m.yy = static_cast<FT_Fixed>(std::lround(yy * 65536.0));
+    FT_Set_Transform(face_, &m, nullptr);
+}
+
+void Face::clearTransform() {
+    LibraryLock lock(*lib_);
+    FT_Set_Transform(face_, nullptr, nullptr);
 }
 
 bool Face::glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out, bool bold, bool italic) {
