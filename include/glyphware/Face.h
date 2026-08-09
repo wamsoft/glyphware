@@ -94,8 +94,9 @@ public:
     GlyphId glyphIndex(char32_t codepoint) const;
     bool covers(char32_t codepoint) const { return glyphIndex(codepoint) != 0; }
 
-    // Advance/bearing/bbox for a glyph, in current pixel size.
-    bool glyphMetrics(GlyphId gid, GlyphMetrics& out) const;
+    // Advance/bearing/bbox for a glyph, in current pixel size. `bold`/`italic`
+    // apply synthetic emboldening/obliquing so the advance matches glyphBitmap().
+    bool glyphMetrics(GlyphId gid, GlyphMetrics& out, bool bold = false, bool italic = false) const;
     LineMetrics lineMetrics() const;
 
     // Decompose the glyph outline (font units, unscaled). false if the glyph

@@ -238,7 +238,7 @@ GlyphId Face::glyphIndex(char32_t cp) const {
     return FT_Get_Char_Index(face_, static_cast<FT_ULong>(cp));
 }
 
-bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out) const {
+bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out, bool bold, bool italic) const {
     LibraryLock lock(*lib_);
     // For scalable fonts ignore embedded bitmap strikes so the advance is the
     // OUTLINE advance — consistent with glyphBitmap() (which renders outlines for
@@ -250,7 +250,15 @@ bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out) const {
     FT_Int32 flags = FT_LOAD_DEFAULT;
     if (face_->face_flags & FT_FACE_FLAG_SCALABLE) flags |= FT_LOAD_NO_BITMAP;
     if (FT_Load_Glyph(face_, gid, flags) != 0) return false;
-    const FT_Glyph_Metrics& m = face_->glyph->metrics;
+    FT_GlyphSlot slot = face_->glyph;
+    // apply synthetic bold/italic so the advance/metrics match glyphBitmap():
+    // FT_GlyphSlot_Embolden widens the advance, so the classic FreeType path
+    // (which emboldens before reading the advance) is otherwise wider than us.
+    if (slot->format == FT_GLYPH_FORMAT_OUTLINE) {
+        if (bold) FT_GlyphSlot_Embolden(slot);
+        if (italic) FT_GlyphSlot_Oblique(slot);
+    }
+    const FT_Glyph_Metrics& m = slot->metrics;
     // fixed-strike (bitmap-only, e.g. CBDT color emoji) fonts report metrics at
     // the strike ppem; scale to the requested pixel size to match glyphBitmap().
     float scale = 1.0f;
@@ -258,8 +266,8 @@ bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out) const {
         face_->size && face_->size->metrics.y_ppem > 0) {
         scale = static_cast<float>(pixelSize_) / face_->size->metrics.y_ppem;
     }
-    out.advanceX = face_->glyph->advance.x / 64.0f * scale;
-    out.advanceY = face_->glyph->advance.y / 64.0f * scale;
+    out.advanceX = slot->advance.x / 64.0f * scale;
+    out.advanceY = slot->advance.y / 64.0f * scale;
     out.bearingX = m.horiBearingX / 64.0f * scale;
     out.bearingY = m.horiBearingY / 64.0f * scale;
     out.width = m.width / 64.0f * scale;
