@@ -18,7 +18,16 @@ if(MSVC)
 endif()
 
 find_package(Freetype REQUIRED)
-find_package(harfbuzz CONFIG REQUIRED)
+
+# HarfBuzz: reuse a `harfbuzz` target already provided by the parent project
+# (the krkrz_dev umbrella's cmake/CommonExternals.cmake FetchContents HarfBuzz
+# once and shares it across plugins to keep them ABI-consistent — so it must NOT
+# also come from vcpkg). Only find it via the package manager when building
+# glyphware standalone, i.e. when no such target exists. This mirrors how
+# layerExVector / elements guard their own thorvg/harfbuzz with if(NOT TARGET).
+if(NOT TARGET harfbuzz)
+  find_package(harfbuzz CONFIG REQUIRED)
+endif()
 
 # SheenBidi (Apache-2.0) — the BiDi backend. Fetched and built as a single unity
 # static library (its default). Swappable: see src/Bidi_sheenbidi.cpp.
