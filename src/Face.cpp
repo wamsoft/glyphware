@@ -343,7 +343,12 @@ void Face::clearTransform() {
 
 bool Face::glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out, bool bold, bool italic) {
     LibraryLock lock(*lib_);
-    FT_Int32 flags = color ? FT_LOAD_COLOR : FT_LOAD_DEFAULT;
+    // color=true: allow color bitmaps (CBDT/COLR/sbix) for emoji glyphs.
+    // color=false: text -> force the scalable outline with FT_LOAD_NO_BITMAP so
+    // embedded MONO bitmap strikes (which CJK fonts carry at small sizes) are
+    // ignored, matching the classic FreeType path (anti-aliased outlines) rather
+    // than rendering blocky embedded bitmaps.
+    FT_Int32 flags = color ? FT_LOAD_COLOR : (FT_LOAD_DEFAULT | FT_LOAD_NO_BITMAP);
     if (FT_Load_Glyph(face_, gid, flags) != 0) return false;
     FT_GlyphSlot slot = face_->glyph;
     if (slot->format == FT_GLYPH_FORMAT_OUTLINE) {
