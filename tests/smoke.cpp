@@ -187,6 +187,34 @@ int main(int argc, char** argv) {
             }
     }
 
+    // Manifest (fonts.json) — declared metadata, coverage without opening
+    {
+        auto loader = std::make_shared<DiskLoader>();
+        Registry reg(loader);
+        std::string json = std::string("{\"version\":1,\"fonts\":[{")
+            + "\"file\":\"" + used + "\","
+            + "\"family\":\"Declared Family\",\"aliases\":[\"decl-alias\"],"
+            + "\"scripts\":[\"Latn\"],\"weight\":700,\"width\":5,\"italic\":true,"
+            + "\"flags\":[\"monospace\"],\"ranges\":[[65,90],[97,122]]"  // A-Z a-z
+            + "}]}";
+        std::string err;
+        int added = registerFontManifest(reg, json, &err);
+        std::printf("  manifest: added=%d err='%s'\n", added, err.c_str());
+        if (added != 1) { std::fprintf(stderr, "FAIL: manifest add (%s)\n", err.c_str()); return 22; }
+
+        // Declared ranges answer coverage without opening the font.
+        FontQuery qA; qA.containsCodepoints = {U'A'};
+        FontQuery q0; q0.containsCodepoints = {U'0'};   // 0x30, outside declared ranges
+        std::size_t nA = reg.query(qA).size();
+        std::size_t n0 = reg.query(q0).size();
+        std::printf("  manifest: containsA=%zu contains0=%zu\n", nA, n0);
+        if (nA != 1) { std::fprintf(stderr, "FAIL: declared coverage A\n"); return 23; }
+        if (n0 != 0) { std::fprintf(stderr, "FAIL: declared coverage 0 should drop\n"); return 24; }
+        if (reg.findByName("decl-alias").empty() || reg.findByName("Declared Family").empty()) {
+            std::fprintf(stderr, "FAIL: manifest name/alias\n"); return 25;
+        }
+    }
+
     std::printf("PASS\n");
     return 0;
 }

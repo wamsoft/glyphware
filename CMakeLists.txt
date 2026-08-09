@@ -33,6 +33,14 @@ FetchContent_Declare(sheenbidi
 )
 FetchContent_MakeAvailable(sheenbidi)
 
+# picojson (BSD-2-Clause) — header-only JSON, for fonts.json manifest parsing.
+FetchContent_Declare(picojson
+  GIT_REPOSITORY https://github.com/kazuho/picojson.git
+  GIT_TAG v1.3.0
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(picojson)
+
 add_library(glyphware
   src/Library.cpp
   src/Face.cpp
@@ -40,7 +48,9 @@ add_library(glyphware
   src/Registry.cpp
   src/Bidi_sheenbidi.cpp
   src/Layout.cpp
+  src/Manifest.cpp
 )
+target_include_directories(glyphware PRIVATE ${picojson_SOURCE_DIR})
 add_library(glyphware::glyphware ALIAS glyphware)
 
 target_include_directories(glyphware

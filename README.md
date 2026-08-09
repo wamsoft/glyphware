@@ -33,6 +33,7 @@ that includes glyphware, retain these libraries' license notices.
 | [FreeType](https://freetype.org/) | face loading, glyph outlines & bitmaps, metadata (SFNT/OS-2/fvar/cmap) | The FreeType License (FTL, BSD-style with a credit clause) or GPLv2 — dual-licensed |
 | [HarfBuzz](https://harfbuzz.github.io/) | text shaping | MIT ("Old MIT" license) |
 | [SheenBidi](https://github.com/Tehreer/SheenBidi) | Unicode Bidirectional Algorithm (BiDi) | Apache-2.0 |
+| [picojson](https://github.com/kazuho/picojson) | fonts.json manifest parsing (header-only) | BSD-2-Clause |
 
 Pulled in transitively by FreeType (via vcpkg): **zlib** (zlib license),
 **libpng** (PNG Reference Library license), **bzip2** (bzip2 license).
