@@ -23,10 +23,33 @@ See the umbrella design plan (kirikiri font-unification) — glyphware is the
 "unified font engine library" that replaces the three-plus independent
 FreeType/HarfBuzz stacks scattered across the core and plugins.
 
+## Third-party libraries and licenses
+
+glyphware links the following third-party libraries. When distributing a binary
+that includes glyphware, retain these libraries' license notices.
+
+| Library | Used for | License |
+|---|---|---|
+| [FreeType](https://freetype.org/) | face loading, glyph outlines & bitmaps, metadata (SFNT/OS-2/fvar/cmap) | The FreeType License (FTL, BSD-style with a credit clause) or GPLv2 — dual-licensed |
+| [HarfBuzz](https://harfbuzz.github.io/) | text shaping | MIT ("Old MIT" license) |
+| [SheenBidi](https://github.com/Tehreer/SheenBidi) | Unicode Bidirectional Algorithm (BiDi) | Apache-2.0 |
+
+Pulled in transitively by FreeType (via vcpkg): **zlib** (zlib license),
+**libpng** (PNG Reference Library license), **bzip2** (bzip2 license).
+
+FreeType and HarfBuzz are provided by the vcpkg manifest (`vcpkg.json`);
+SheenBidi is fetched by CMake `FetchContent` (pinned to `v3.0.0`). The BiDi
+backend is isolated behind `src/Bidi_sheenbidi.cpp`, so SheenBidi can be swapped
+(e.g. for ICU) without affecting the rest.
+
+> glyphware's own license is to be set by the project owner (Wamsoft); this
+> section records only the third-party dependencies' terms.
+
 ## Build
 
 Requires a C++17 compiler, CMake ≥ 3.20, and vcpkg (`VCPKG_ROOT` set). FreeType
-and HarfBuzz are pulled by the vcpkg manifest (`vcpkg.json`).
+and HarfBuzz are pulled by the vcpkg manifest (`vcpkg.json`); SheenBidi is
+fetched via `FetchContent`.
 
 ```sh
 cmake --preset x64-windows
