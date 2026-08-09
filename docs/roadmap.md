@@ -16,12 +16,30 @@
 Shaping currently uses HarfBuzz's built-in Unicode data (`hb-ucd`); **no ICU is
 required** for single-run shaping.
 
-## Next — text layout (multilingual)
+## In progress — Milestone A+ : BiDi + text layout
 
-Real multilingual text needs a layout layer above single-run shaping:
-**script/style itemization**, **BiDi** reordering, and **line/word breaking**
-(Thai/Khmer/Lao and CJK line breaking have no spaces). That layer needs Unicode
-data beyond what HarfBuzz bundles — i.e. **ICU**.
+The core `drawText` path should support **BiDi display** too, so glyphware grows
+a small layout layer above single-run shaping. The concerns are deliberately
+split behind **swappable seams** so each can be replaced independently:
+
+- **BiDi** (logical → visual reordering) — implemented with **SheenBidi** (MIT,
+  self-contained, tiny; no ICU). This is the current addition.
+- **Line/word breaking** (break opportunities; Thai/Khmer/CJK have no spaces) —
+  a **separate** provider. A naive breaker (spaces + CJK boundaries) now; a
+  full breaker (ICU `brkitr`, or a dictionary/rule breaker built inside
+  glyphware) can be dropped in later **without touching the BiDi backend**.
+- **Itemization** (splitting mixed script/style/face runs) — the fallback/run
+  splitter that feeds the shaper.
+
+So: SheenBidi covers BiDi now; a heavier Unicode-data dependency (ICU) is added
+only when real line-breaking/itemization is wanted — and only the line-breaker
+seam changes, not BiDi.
+
+### Reference: minimal ICU build (for the line-breaking/itemization stage)
+
+Real script itemization and dictionary/rule line breaking need Unicode data
+beyond what HarfBuzz bundles — i.e. **ICU**. When that stage arrives, reuse the
+existing minimal-ICU setup in the kirikiri tree:
 
 ### Reference: minimal ICU build ("character-data only")
 

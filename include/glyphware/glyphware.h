@@ -20,5 +20,6 @@
 #include "Face.h"
 #include "Shaper.h"
 #include "Registry.h"
+#include "Bidi.h"
 
 #endif // GLYPHWARE_H

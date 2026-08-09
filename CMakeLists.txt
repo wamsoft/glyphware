@@ -20,11 +20,25 @@ endif()
 find_package(Freetype REQUIRED)
 find_package(harfbuzz CONFIG REQUIRED)
 
+# SheenBidi (Apache-2.0) — the BiDi backend. Fetched and built as a single unity
+# static library (its default). Swappable: see src/Bidi_sheenbidi.cpp.
+include(FetchContent)
+set(SB_CONFIG_UNITY ON CACHE BOOL "" FORCE)
+set(BUILD_GENERATOR OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(sheenbidi
+  GIT_REPOSITORY https://github.com/Tehreer/SheenBidi.git
+  GIT_TAG v3.0.0
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(sheenbidi)
+
 add_library(glyphware
   src/Library.cpp
   src/Face.cpp
   src/Shaper.cpp
   src/Registry.cpp
+  src/Bidi_sheenbidi.cpp
 )
 add_library(glyphware::glyphware ALIAS glyphware)
 
@@ -38,6 +52,7 @@ target_link_libraries(glyphware
     Freetype::Freetype
   PRIVATE
     harfbuzz::harfbuzz
+    SheenBidi::SheenBidi
 )
 
 if(GLYPHWARE_BUILD_TESTS)

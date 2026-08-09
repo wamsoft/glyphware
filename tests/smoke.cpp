@@ -145,6 +145,29 @@ int main(int argc, char** argv) {
         }
     }
 
+    // BiDi (logical -> visual runs). "abc" + Hebrew alef/bet/gimel + "def".
+    {
+        std::string bidi = std::string("abc") + "\xD7\x90\xD7\x91\xD7\x92" + "def";
+        BidiResult br = bidiAnalyze(bidi, BaseDirection::LTR);
+        std::printf("  bidi: paraLevel=%d runs=%zu :", br.paragraphLevel, br.runs.size());
+        for (auto& r : br.runs)
+            std::printf(" [%zu+%zu L%d %s]", r.offset, r.length, r.level, r.rtl ? "RTL" : "LTR");
+        std::printf("\n");
+        if (br.runs.size() != 3) {
+            std::fprintf(stderr, "FAIL: bidi run count %zu != 3\n", br.runs.size()); return 14;
+        }
+        if (br.runs[0].rtl || !br.runs[1].rtl || br.runs[2].rtl) {
+            std::fprintf(stderr, "FAIL: bidi run directions\n"); return 15;
+        }
+        if (br.paragraphLevel != 0) { std::fprintf(stderr, "FAIL: bidi base level\n"); return 16; }
+
+        // Auto base direction with a leading RTL char -> RTL paragraph.
+        std::string rtlFirst = std::string("\xD7\x90\xD7\x91") + "AB";
+        BidiResult br2 = bidiAnalyze(rtlFirst, BaseDirection::Auto);
+        std::printf("  bidi(auto, RTL-first): paraLevel=%d runs=%zu\n", br2.paragraphLevel, br2.runs.size());
+        if (br2.paragraphLevel != 1) { std::fprintf(stderr, "FAIL: auto base should be RTL\n"); return 17; }
+    }
+
     std::printf("PASS\n");
     return 0;
 }
