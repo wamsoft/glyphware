@@ -21,5 +21,6 @@
 #include "Shaper.h"
 #include "Registry.h"
 #include "Bidi.h"
+#include "Layout.h"
 
 #endif // GLYPHWARE_H

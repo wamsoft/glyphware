@@ -168,6 +168,25 @@ int main(int argc, char** argv) {
         if (br2.paragraphLevel != 1) { std::fprintf(stderr, "FAIL: auto base should be RTL\n"); return 17; }
     }
 
+    // Layout: BiDi + face itemization + shaping -> visual-order positioned glyphs
+    {
+        std::vector<std::shared_ptr<Face>> chain = {face};
+        std::string mixed = std::string("abc") + "\xD7\x90\xD7\x91\xD7\x92" + "def";
+        LineLayout ll = layoutLine(mixed, BaseDirection::Auto, chain, 32);
+        int rtl = 0;
+        for (auto& g : ll.glyphs) if (g.rtl) ++rtl;
+        std::printf("  layout: glyphs=%zu width=%.1f ascent=%.1f descent=%.1f rtlGlyphs=%d\n",
+                    ll.glyphs.size(), ll.width, ll.ascent, ll.descent, rtl);
+        if (ll.glyphs.empty()) { std::fprintf(stderr, "FAIL: layout no glyphs\n"); return 18; }
+        if (ll.width <= 0.f) { std::fprintf(stderr, "FAIL: layout width\n"); return 19; }
+        if (rtl == 0) { std::fprintf(stderr, "FAIL: layout has no RTL glyphs\n"); return 20; }
+        // x positions must be non-decreasing (visual order, left to right).
+        for (std::size_t i = 1; i < ll.glyphs.size(); ++i)
+            if (ll.glyphs[i].x < ll.glyphs[i - 1].x - 0.01f) {
+                std::fprintf(stderr, "FAIL: layout x not monotonic\n"); return 21;
+            }
+    }
+
     std::printf("PASS\n");
     return 0;
 }

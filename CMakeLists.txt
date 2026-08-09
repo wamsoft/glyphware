@@ -39,6 +39,7 @@ add_library(glyphware
   src/Shaper.cpp
   src/Registry.cpp
   src/Bidi_sheenbidi.cpp
+  src/Layout.cpp
 )
 add_library(glyphware::glyphware ALIAS glyphware)
 
