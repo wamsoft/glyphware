@@ -7,6 +7,7 @@
 #include FT_TRUETYPE_IDS_H
 #include FT_TRUETYPE_TABLES_H
 #include FT_MULTIPLE_MASTERS_H
+#include FT_SYNTHESIS_H
 
 #include <hb.h>
 #include <hb-ft.h>
@@ -243,6 +244,21 @@ LineMetrics Face::lineMetrics() const {
         lm.ascent = sm.ascender / 64.0f;
         lm.descent = -(sm.descender / 64.0f);
         lm.lineGap = (sm.height - (sm.ascender - sm.descender)) / 64.0f;
+
+        // underline / strikeout, scaled to the current size (positive downward).
+        const FT_Fixed ys = sm.y_scale;
+        lm.underlineOffset = -(FT_MulFix(face_->underline_position, ys) / 64.0f);
+        lm.underlineThickness = FT_MulFix(face_->underline_thickness, ys) / 64.0f;
+        auto* os2 = static_cast<TT_OS2*>(FT_Get_Sfnt_Table(face_, FT_SFNT_OS2));
+        if (os2 && os2->version != 0xFFFF) {
+            lm.strikeoutOffset = -(FT_MulFix(os2->yStrikeoutPosition, ys) / 64.0f);
+            lm.strikeoutThickness = FT_MulFix(os2->yStrikeoutSize, ys) / 64.0f;
+        } else {
+            lm.strikeoutOffset = -(lm.ascent * 0.3f);
+            lm.strikeoutThickness = lm.underlineThickness;
+        }
+        if (lm.underlineThickness < 1.f) lm.underlineThickness = 1.f;
+        if (lm.strikeoutThickness < 1.f) lm.strikeoutThickness = 1.f;
     }
     return lm;
 }
@@ -270,11 +286,13 @@ int cb(const FT_Vector* c1, const FT_Vector* c2, const FT_Vector* to, void* u) {
 }
 } // namespace
 
-bool Face::glyphOutline(GlyphId gid, OutlineSink& sink) const {
+bool Face::glyphOutline(GlyphId gid, OutlineSink& sink, bool bold, bool italic) const {
     LibraryLock lock(*lib_);
     if (FT_Load_Glyph(face_, gid, FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP) != 0)
         return false;
     if (face_->glyph->format != FT_GLYPH_FORMAT_OUTLINE) return false;
+    if (bold) FT_GlyphSlot_Embolden(face_->glyph);
+    if (italic) FT_GlyphSlot_Oblique(face_->glyph);
     FT_Outline_Funcs funcs;
     funcs.move_to = mv;
     funcs.line_to = ln;
@@ -286,11 +304,15 @@ bool Face::glyphOutline(GlyphId gid, OutlineSink& sink) const {
     return FT_Outline_Decompose(&face_->glyph->outline, &funcs, &ctx) == 0;
 }
 
-bool Face::glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out) {
+bool Face::glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out, bool bold, bool italic) {
     LibraryLock lock(*lib_);
     FT_Int32 flags = color ? FT_LOAD_COLOR : FT_LOAD_DEFAULT;
     if (FT_Load_Glyph(face_, gid, flags) != 0) return false;
     FT_GlyphSlot slot = face_->glyph;
+    if (slot->format == FT_GLYPH_FORMAT_OUTLINE) {
+        if (bold) FT_GlyphSlot_Embolden(slot);
+        if (italic) FT_GlyphSlot_Oblique(slot);
+    }
     if (slot->format != FT_GLYPH_FORMAT_BITMAP) {
         if (FT_Render_Glyph(slot, FT_RENDER_MODE_NORMAL) != 0) return false;
     }

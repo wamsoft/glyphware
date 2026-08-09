@@ -32,11 +32,17 @@ struct GlyphMetrics {
 };
 
 // Face-wide line metrics at the current pixel size (see SetPixelSize).
+// underline/strikeout offsets are distances from the baseline, positive downward
+// (so a typical underline offset is a small positive number).
 struct LineMetrics {
     float ascent = 0.f;
     float descent = 0.f;   // positive downward extent
     float lineGap = 0.f;
     float unitsPerEm = 0.f;
+    float underlineOffset = 0.f;
+    float underlineThickness = 0.f;
+    float strikeoutOffset = 0.f;
+    float strikeoutThickness = 0.f;
 };
 
 // Rendered glyph bitmap. `format` distinguishes gray (1 byte/px) from BGRA
@@ -92,13 +98,15 @@ public:
     LineMetrics lineMetrics() const;
 
     // Decompose the glyph outline (font units, unscaled). false if the glyph
-    // has no outline (e.g. a bitmap-only color emoji).
-    bool glyphOutline(GlyphId gid, OutlineSink& sink) const;
+    // has no outline (e.g. a bitmap-only color emoji). `bold`/`italic` apply
+    // synthetic emboldening / obliquing.
+    bool glyphOutline(GlyphId gid, OutlineSink& sink, bool bold = false, bool italic = false) const;
 
     // Render the glyph to a bitmap at the current pixel size. `color` requests
-    // the CBDT/COLR/sbix BGRA path when available. The returned buffer is owned
-    // by this Face and valid until the next render call.
-    bool glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out);
+    // the CBDT/COLR/sbix BGRA path when available. `bold`/`italic` apply
+    // synthetic emboldening / obliquing (ignored for color bitmaps). The
+    // returned buffer is owned by this Face and valid until the next render call.
+    bool glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out, bool bold = false, bool italic = false);
 
 private:
     Face() = default;
