@@ -1,0 +1,12 @@
+{
+  "name": "glyphware",
+  "version": "0.1.0",
+  "description": "Neutral OTF/TTF font engine (FreeType + HarfBuzz): metadata, glyph outlines/bitmaps, shaping, rich query. Host-agnostic (byte source injected).",
+  "dependencies": [
+    {
+      "name": "freetype",
+      "features": ["zlib", "png"]
+    },
+    "harfbuzz"
+  ]
+}
