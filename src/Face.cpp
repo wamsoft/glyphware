@@ -214,7 +214,21 @@ hb_font_t* Face::hb() {
 bool Face::setPixelSize(int pixels) {
     if (pixels <= 0) return false;
     LibraryLock lock(*lib_);
-    if (FT_Set_Pixel_Sizes(face_, 0, static_cast<FT_UInt>(pixels)) != 0) return false;
+    if (FT_Set_Pixel_Sizes(face_, 0, static_cast<FT_UInt>(pixels)) != 0) {
+        // fixed-strike (bitmap-only, e.g. CBDT color emoji) fonts have no
+        // scalable size; select the nearest available strike instead. The
+        // requested pixel size is still recorded so glyphBitmap() can scale
+        // the strike to it.
+        if (face_->num_fixed_sizes <= 0) return false;
+        int best = 0;
+        int bestDelta = 1 << 30;
+        for (int i = 0; i < face_->num_fixed_sizes; ++i) {
+            int ph = face_->available_sizes[i].height;
+            int d = ph > pixels ? ph - pixels : pixels - ph;
+            if (d < bestDelta) { bestDelta = d; best = i; }
+        }
+        if (FT_Select_Size(face_, best) != 0) return false;
+    }
     pixelSize_ = pixels;
     if (hb_) hb_ft_font_changed(hb_);
     return true;
@@ -228,12 +242,19 @@ bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out) const {
     LibraryLock lock(*lib_);
     if (FT_Load_Glyph(face_, gid, FT_LOAD_DEFAULT) != 0) return false;
     const FT_Glyph_Metrics& m = face_->glyph->metrics;
-    out.advanceX = face_->glyph->advance.x / 64.0f;
-    out.advanceY = face_->glyph->advance.y / 64.0f;
-    out.bearingX = m.horiBearingX / 64.0f;
-    out.bearingY = m.horiBearingY / 64.0f;
-    out.width = m.width / 64.0f;
-    out.height = m.height / 64.0f;
+    // fixed-strike (bitmap-only, e.g. CBDT color emoji) fonts report metrics at
+    // the strike ppem; scale to the requested pixel size to match glyphBitmap().
+    float scale = 1.0f;
+    if ((face_->face_flags & FT_FACE_FLAG_SCALABLE) == 0 && pixelSize_ > 0 &&
+        face_->size && face_->size->metrics.y_ppem > 0) {
+        scale = static_cast<float>(pixelSize_) / face_->size->metrics.y_ppem;
+    }
+    out.advanceX = face_->glyph->advance.x / 64.0f * scale;
+    out.advanceY = face_->glyph->advance.y / 64.0f * scale;
+    out.bearingX = m.horiBearingX / 64.0f * scale;
+    out.bearingY = m.horiBearingY / 64.0f * scale;
+    out.width = m.width / 64.0f * scale;
+    out.height = m.height / 64.0f * scale;
     return true;
 }
 
@@ -333,17 +354,79 @@ bool Face::glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out, bool bold, boo
         if (FT_Render_Glyph(slot, FT_RENDER_MODE_NORMAL) != 0) return false;
     }
     const FT_Bitmap& bm = slot->bitmap;
-    switch (bm.pixel_mode) {
-        case FT_PIXEL_MODE_BGRA: out.format = BitmapFormat::BGRA; break;
-        case FT_PIXEL_MODE_MONO: out.format = BitmapFormat::Mono; break;
-        default: out.format = BitmapFormat::Gray; break;
-    }
+    const int w = static_cast<int>(bm.width);
+    const int h = static_cast<int>(bm.rows);
     out.left = slot->bitmap_left;
     out.top = slot->bitmap_top;
-    out.width = static_cast<int>(bm.width);
-    out.rows = static_cast<int>(bm.rows);
-    out.pitch = bm.pitch;
-    out.buffer = bm.buffer;
+
+    if (bm.pixel_mode == FT_PIXEL_MODE_BGRA) {
+        // color glyph (COLR/CBDT/sbix). Premultiplied BGRA. Bitmap-strike fonts
+        // (CBDT/sbix) render at a fixed strike ppem, so scale to the requested
+        // pixel size (scalable COLR renders at pixelSize_ already => scale~1).
+        const int yppem = face_->size ? static_cast<int>(face_->size->metrics.y_ppem) : 0;
+        const double scale = (yppem > 0 && pixelSize_ > 0)
+                                 ? static_cast<double>(pixelSize_) / yppem : 1.0;
+        if (w > 0 && h > 0 && (scale < 0.99 || scale > 1.01)) {
+            int dw = static_cast<int>(w * scale + 0.5); if (dw < 1) dw = 1;
+            int dh = static_cast<int>(h * scale + 0.5); if (dh < 1) dh = 1;
+            bmpBuf_.assign(static_cast<std::size_t>(dw) * dh * 4, 0);
+            const int spitch = bm.pitch;
+            for (int dy = 0; dy < dh; ++dy) {
+                int sy0 = static_cast<int>(static_cast<std::int64_t>(dy) * h / dh);
+                int sy1 = static_cast<int>(static_cast<std::int64_t>(dy + 1) * h / dh);
+                if (sy1 <= sy0) sy1 = sy0 + 1; if (sy1 > h) sy1 = h;
+                for (int dx = 0; dx < dw; ++dx) {
+                    int sx0 = static_cast<int>(static_cast<std::int64_t>(dx) * w / dw);
+                    int sx1 = static_cast<int>(static_cast<std::int64_t>(dx + 1) * w / dw);
+                    if (sx1 <= sx0) sx1 = sx0 + 1; if (sx1 > w) sx1 = w;
+                    std::uint32_t b = 0, g = 0, r = 0, a = 0, cnt = 0;
+                    for (int yy = sy0; yy < sy1; ++yy) {
+                        const std::uint8_t* sp = bm.buffer + static_cast<std::ptrdiff_t>(spitch) * yy + static_cast<std::ptrdiff_t>(sx0) * 4;
+                        for (int xx = sx0; xx < sx1; ++xx) { b += sp[0]; g += sp[1]; r += sp[2]; a += sp[3]; sp += 4; ++cnt; }
+                    }
+                    std::uint8_t* d = &bmpBuf_[(static_cast<std::size_t>(dy) * dw + dx) * 4];
+                    d[0] = static_cast<std::uint8_t>(b / cnt); d[1] = static_cast<std::uint8_t>(g / cnt);
+                    d[2] = static_cast<std::uint8_t>(r / cnt); d[3] = static_cast<std::uint8_t>(a / cnt);
+                }
+            }
+            out.left = static_cast<int>(out.left * scale + (out.left >= 0 ? 0.5 : -0.5));
+            out.top = static_cast<int>(out.top * scale + (out.top >= 0 ? 0.5 : -0.5));
+            out.format = BitmapFormat::BGRA;
+            out.width = dw; out.rows = dh; out.pitch = dw * 4; out.buffer = bmpBuf_.data();
+            return true;
+        }
+        out.format = BitmapFormat::BGRA;
+        out.width = w; out.rows = h; out.pitch = bm.pitch; out.buffer = bm.buffer;
+        return true;
+    }
+
+    // grayscale / monochrome -> normalized 8-bit gray coverage (0..255). This
+    // covers embedded MONO bitmap strikes (CJK fonts at small sizes) and gray
+    // bitmaps whose num_grays != 256, matching the classic FreeType path so a
+    // consumer always gets true 8-bit coverage.
+    out.format = BitmapFormat::Gray;
+    out.width = w; out.rows = h; out.pitch = w;
+    if (w <= 0 || h <= 0) { out.pitch = 0; out.buffer = nullptr; return true; }
+    bmpBuf_.assign(static_cast<std::size_t>(w) * h, 0);
+    if (bm.pixel_mode == FT_PIXEL_MODE_MONO) {
+        for (int y = 0; y < h; ++y) {
+            const std::uint8_t* src = bm.buffer + static_cast<std::ptrdiff_t>(bm.pitch) * y;
+            std::uint8_t* d = bmpBuf_.data() + static_cast<std::size_t>(w) * y;
+            for (int x = 0; x < w; ++x) d[x] = (src[x >> 3] & (0x80 >> (x & 7))) ? 255 : 0;
+        }
+    } else {
+        const int ng = bm.num_grays > 1 ? bm.num_grays : 256;
+        for (int y = 0; y < h; ++y) {
+            const std::uint8_t* src = bm.buffer + static_cast<std::ptrdiff_t>(bm.pitch) * y;
+            std::uint8_t* d = bmpBuf_.data() + static_cast<std::size_t>(w) * y;
+            for (int x = 0; x < w; ++x) {
+                int v = src[x];
+                if (ng != 256) v = v * 255 / (ng - 1);
+                d[x] = static_cast<std::uint8_t>(v);
+            }
+        }
+    }
+    out.buffer = bmpBuf_.data();
     return true;
 }
 

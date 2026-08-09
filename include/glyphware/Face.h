@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 typedef struct FT_FaceRec_* FT_Face;
 struct hb_font_t;
@@ -121,6 +122,9 @@ private:
     hb_font_t* hb_ = nullptr;
     FontDescriptor desc_;
     int pixelSize_ = 0;
+    // owned normalized bitmap (mono->gray / num_grays->256 / scaled color strike);
+    // glyphBitmap() points GlyphBitmap::buffer here, valid until the next call.
+    std::vector<std::uint8_t> bmpBuf_;
 
     void resolveMetadata();
 };
