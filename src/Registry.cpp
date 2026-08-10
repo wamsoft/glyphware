@@ -129,10 +129,16 @@ std::vector<int> Registry::findByName(std::string_view name) const {
 void Registry::ensureFor(int id, const FontQuery& q) {
     Slot& s = entries_[id];
     if (s.e.descriptor.metadataResolved) return;
-    const bool needsStyle = q.weight || q.width || q.slant || q.monospace || q.color || q.script;
+    // Trust declared metadata: a declared style block (weight/flags/...) and
+    // declared scripts/ranges answer their constraints without opening the
+    // font. Only resolve what the declaration leaves unknown.
+    const bool styleUnknown = !s.e.descriptor.styleDeclared;
+    const bool needsStyle =
+        (q.weight || q.width || q.slant || q.monospace || q.color) && styleUnknown;
+    const bool needsScript = q.script && s.e.descriptor.scripts.empty();
     const bool needsCoverage = !q.containsText.empty() || !q.containsCodepoints.empty();
     const bool coverageUnknown = needsCoverage && s.e.descriptor.ranges.empty();
-    if (needsStyle || coverageUnknown) resolve(id);
+    if (needsStyle || needsScript || coverageUnknown) resolve(id);
 }
 
 std::vector<int> Registry::query(const FontQuery& q) {

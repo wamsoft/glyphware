@@ -71,6 +71,8 @@ struct FontDescriptor {
     std::vector<VarAxis> axes;
 
     bool metadataResolved = false;      // false = declared-only, not yet FT-parsed
+    bool styleDeclared = false;         // weight/width/slant/color/monospace came from a
+                                        // declaration and can be trusted without resolving
 };
 
 // Rich query. Unset (nullopt / empty) fields do not constrain. `containsText`

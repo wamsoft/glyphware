@@ -78,15 +78,19 @@ std::vector<FontEntry> parseFontManifest(std::string_view json, std::string* err
 
         double num = 0;
         if (getNumber(f, "faceIndex", num)) { e.faceIndex = (int)num; d.faceIndex = (int)num; }
-        if (getNumber(f, "weight", num)) d.weight = clampWeight((int)num);
+        if (getNumber(f, "weight", num)) { d.weight = clampWeight((int)num); d.styleDeclared = true; }
         if (getNumber(f, "width", num)) {
             int w = (int)num;
-            if (w >= 1 && w <= 9) d.width = static_cast<Width>(w);
+            if (w >= 1 && w <= 9) { d.width = static_cast<Width>(w); d.styleDeclared = true; }
         }
         auto iit = f.find("italic");
-        if (iit != f.end() && iit->second.is<bool>() && iit->second.get<bool>())
-            d.slant = Slant::Italic;
+        if (iit != f.end() && iit->second.is<bool>()) {
+            if (iit->second.get<bool>()) d.slant = Slant::Italic;
+            d.styleDeclared = true;
+        }
 
+        auto flit = f.find("flags");
+        if (flit != f.end() && flit->second.is<picojson::array>()) d.styleDeclared = true;
         for (const auto& fl : getStringArray(f, "flags")) {
             if (fl == "color") d.color = true;
             else if (fl == "monospace" || fl == "mono") d.monospace = true;
