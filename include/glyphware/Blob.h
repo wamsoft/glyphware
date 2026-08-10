@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace glyphware {
 
@@ -42,7 +43,10 @@ public:
         return storage_.empty() ? bytes_.size() : storage_.size();
     }
 private:
-    std::basic_string<std::uint8_t> bytes_;
+    // std::basic_string<uint8_t> は使わない: 新しめの libc++ (NX SDK 22 等) は
+    // std::char_traits の char/wchar_t/char8_t/char16_t/char32_t 以外の
+    // 特殊化を提供しないため instantiation エラーになる。
+    std::vector<std::uint8_t> bytes_;
     std::string storage_;
 };
 
