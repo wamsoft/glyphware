@@ -286,8 +286,12 @@ float Face::fixedStrikeScale() const {
 LineMetrics Face::lineMetrics() const {
     LineMetrics lm;
     lm.unitsPerEm = static_cast<float>(face_->units_per_EM);
+    lm.ascenderUnits = static_cast<float>(face_->ascender);
     if (pixelSize_ > 0) {
         const FT_Size_Metrics& sm = face_->size->metrics;
+        lm.ppemY = static_cast<float>(sm.y_ppem);
+        // note: sm.ascender is FT_PIX_CEIL'ed by FreeType. Consumers that need
+        // an unrounded ascent should derive it from ascenderUnits/ppemY/unitsPerEm.
         lm.ascent = sm.ascender / 64.0f;
         lm.descent = -(sm.descender / 64.0f);
         lm.lineGap = (sm.height - (sm.ascender - sm.descender)) / 64.0f;

@@ -40,6 +40,8 @@ struct LineMetrics {
     float descent = 0.f;   // positive downward extent
     float lineGap = 0.f;
     float unitsPerEm = 0.f;
+    float ascenderUnits = 0.f;  // raw FT_FaceRec::ascender in font units (unscaled)
+    float ppemY = 0.f;          // active vertical pixels-per-EM (size->metrics.y_ppem)
     float underlineOffset = 0.f;
     float underlineThickness = 0.f;
     float strikeoutOffset = 0.f;
