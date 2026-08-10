@@ -99,6 +99,12 @@ public:
     bool glyphMetrics(GlyphId gid, GlyphMetrics& out, bool bold = false, bool italic = false) const;
     LineMetrics lineMetrics() const;
 
+    // Correction factor from the selected fixed strike to the requested pixel
+    // size for bitmap-only fonts (CBDT color emoji etc.); 1.0 for scalable
+    // fonts. HarfBuzz advances/offsets come back at the strike ppem, so the
+    // shaper multiplies its output by this to match glyphBitmap()/glyphMetrics().
+    float fixedStrikeScale() const;
+
     // Decompose the glyph outline (font units, unscaled). false if the glyph
     // has no outline (e.g. a bitmap-only color emoji). `bold`/`italic` apply
     // synthetic emboldening / obliquing.

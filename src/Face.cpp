@@ -275,6 +275,14 @@ bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out, bool bold, bool italic) 
     return true;
 }
 
+float Face::fixedStrikeScale() const {
+    if ((face_->face_flags & FT_FACE_FLAG_SCALABLE) == 0 && pixelSize_ > 0 &&
+        face_->size && face_->size->metrics.y_ppem > 0) {
+        return static_cast<float>(pixelSize_) / face_->size->metrics.y_ppem;
+    }
+    return 1.0f;
+}
+
 LineMetrics Face::lineMetrics() const {
     LineMetrics lm;
     lm.unitsPerEm = static_cast<float>(face_->units_per_EM);
