@@ -7,6 +7,10 @@ project(glyphware VERSION 0.1.0 LANGUAGES CXX)
 # layerExVector (see design plan). This library itself knows nothing about krkr.
 
 option(GLYPHWARE_BUILD_TESTS "Build glyphware smoke/unit tests" ON)
+# Install rules (glyphware.lib + include/glyphware). Parent projects embedding
+# glyphware via add_subdirectory can set this to OFF to keep glyphware (and its
+# bundled SheenBidi) out of their install tree.
+option(GLYPHWARE_INSTALL "Generate install rules" ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,14 +35,19 @@ endif()
 
 # SheenBidi (Apache-2.0) — the BiDi backend. Fetched and built as a single unity
 # static library (its default). Swappable: see src/Bidi_sheenbidi.cpp.
+# Fork (wtnbgo/SheenBidi, custom branch = v3.0.0 + SB_INSTALL option): upstream
+# has unconditional install rules that would leak into the embedding project's
+# install tree; the fork guards them behind SB_INSTALL.
 include(FetchContent)
 set(SB_CONFIG_UNITY ON CACHE BOOL "" FORCE)
 set(BUILD_GENERATOR OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+if(NOT DEFINED SB_INSTALL)
+  set(SB_INSTALL ${GLYPHWARE_INSTALL})
+endif()
 FetchContent_Declare(sheenbidi
-  GIT_REPOSITORY https://github.com/Tehreer/SheenBidi.git
-  GIT_TAG v3.0.0
-  GIT_SHALLOW TRUE
+  GIT_REPOSITORY https://github.com/wtnbgo/SheenBidi.git
+  GIT_TAG c90c0949e33c6f9f1e52c3caf79929c8b1678503 # custom (v3.0.0 + SB_INSTALL)
 )
 FetchContent_MakeAvailable(sheenbidi)
 
@@ -80,9 +89,11 @@ if(GLYPHWARE_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-include(GNUInstallDirs)
-install(TARGETS glyphware EXPORT glyphwareTargets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if(GLYPHWARE_INSTALL)
+  include(GNUInstallDirs)
+  install(TARGETS glyphware EXPORT glyphwareTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()

@@ -39,7 +39,9 @@ Pulled in transitively by FreeType (via vcpkg): **zlib** (zlib license),
 **libpng** (PNG Reference Library license), **bzip2** (bzip2 license).
 
 FreeType and HarfBuzz are provided by the vcpkg manifest (`vcpkg.json`);
-SheenBidi is fetched by CMake `FetchContent` (pinned to `v3.0.0`). The BiDi
+SheenBidi is fetched by CMake `FetchContent` from the [wtnbgo fork](https://github.com/wtnbgo/SheenBidi)
+(`custom` branch = `v3.0.0` + an `SB_INSTALL` option so embedding projects can
+suppress its install rules; see `GLYPHWARE_INSTALL` below). The BiDi
 backend is isolated behind `src/Bidi_sheenbidi.cpp`, so SheenBidi can be swapped
 (e.g. for ICU) without affecting the rest.
 
@@ -57,6 +59,11 @@ cmake --preset x64-windows
 cmake --build build/x64-windows --config Release
 ctest --test-dir build/x64-windows -C Release --output-on-failure
 ```
+
+CMake options: `GLYPHWARE_BUILD_TESTS` (default ON) builds the tests;
+`GLYPHWARE_INSTALL` (default ON) generates install rules for glyphware and the
+bundled SheenBidi — parent projects embedding glyphware via `add_subdirectory`
+can set it to OFF to keep both out of their install tree.
 
 The `glyphware_smoke` test opens a real font (a system font by default, or one
 passed as its first argument) and exercises metadata / outline / bitmap /
