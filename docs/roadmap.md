@@ -25,9 +25,12 @@ split behind **swappable seams** so each can be replaced independently:
 - **BiDi** (logical → visual reordering) — implemented with **SheenBidi** (MIT,
   self-contained, tiny; no ICU). This is the current addition.
 - **Line/word breaking** (break opportunities; Thai/Khmer/CJK have no spaces) —
-  a **separate** provider. A naive breaker (spaces + CJK boundaries) now; a
-  full breaker (ICU `brkitr`, or a dictionary/rule breaker built inside
-  glyphware) can be dropped in later **without touching the BiDi backend**.
+  a **separate** provider, now implemented in `src/Block.cpp` (`layoutBlock`):
+  a naive breaker (spaces + CJK boundaries + Japanese 行頭/行末禁則) plus
+  rectangle flow (alignment, height bound, cluster `count` reveal). A full
+  breaker (ICU `brkitr`, or a dictionary/rule breaker built inside glyphware)
+  can be dropped in later **without touching the BiDi backend** — the character
+  classes and the unit splitter are the only things it replaces.
 - **Itemization** (splitting mixed script/style/face runs) — the fallback/run
   splitter that feeds the shaper.
 

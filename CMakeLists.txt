@@ -66,6 +66,7 @@ add_library(glyphware
   src/Registry.cpp
   src/Bidi_sheenbidi.cpp
   src/Layout.cpp
+  src/Block.cpp
   src/Manifest.cpp
 )
 target_include_directories(glyphware PRIVATE ${picojson_SOURCE_DIR})

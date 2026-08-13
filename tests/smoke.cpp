@@ -187,6 +187,83 @@ int main(int argc, char** argv) {
             }
     }
 
+    // Block layout: wrapping, explicit newlines, alignment, cluster reveal
+    {
+        std::vector<std::shared_ptr<Face>> chain = {face};
+        const std::string para = "The quick brown fox jumps over the lazy dog";
+
+        // Unwrapped width tells us what a meaningful wrap width looks like.
+        const float full = layoutLine(para, BaseDirection::LTR, chain, 24).width;
+        BlockOptions o;
+        o.width = full / 3.f;
+        BlockLayout bl = layoutBlock(para, BaseDirection::LTR, chain, 24, o);
+        std::printf("  block: full=%.1f areaW=%.1f -> lines=%d w=%.1f h=%.1f pitch=%.1f clusters=%d\n",
+                    full, o.width, bl.lineCount, bl.width, bl.height, bl.lineHeight, bl.totalClusters);
+        if (bl.lineCount < 3) { std::fprintf(stderr, "FAIL: block did not wrap\n"); return 26; }
+        if (bl.width > o.width) {
+            // Only a single unbreakable unit may exceed the area; this text has none.
+            std::fprintf(stderr, "FAIL: block line wider than the area\n"); return 27;
+        }
+        if (bl.height < bl.lineHeight) { std::fprintf(stderr, "FAIL: block height\n"); return 28; }
+        // Lines must cover the paragraph in order, without overlapping.
+        std::size_t prevEnd = 0;
+        for (auto& l : bl.lines) {
+            if (l.byteStart < prevEnd || l.byteEnd < l.byteStart) {
+                std::fprintf(stderr, "FAIL: block line ranges out of order\n"); return 29;
+            }
+            prevEnd = l.byteEnd;
+        }
+
+        // Explicit newlines always break, even with no wrap width.
+        BlockOptions on;   // width 0 = break only at newlines
+        BlockLayout nl = layoutBlock("a\nb\r\nc\rd", BaseDirection::LTR, chain, 24, on);
+        std::printf("  block: newline-only -> lines=%d\n", nl.lineCount);
+        if (nl.lineCount != 4) { std::fprintf(stderr, "FAIL: newline split\n"); return 30; }
+
+        // Alignment shifts the line origin without touching the glyphs.
+        BlockOptions oc = o; oc.align = Align::Center;
+        BlockOptions orr = o; orr.align = Align::Right;
+        BlockLayout cbl = layoutBlock(para, BaseDirection::LTR, chain, 24, oc);
+        BlockLayout rbl = layoutBlock(para, BaseDirection::LTR, chain, 24, orr);
+        std::printf("  block: align x left=%.1f center=%.1f right=%.1f\n",
+                    bl.lines[0].x, cbl.lines[0].x, rbl.lines[0].x);
+        if (!(bl.lines[0].x <= cbl.lines[0].x && cbl.lines[0].x <= rbl.lines[0].x)) {
+            std::fprintf(stderr, "FAIL: alignment order\n"); return 31;
+        }
+        if (cbl.lineCount != bl.lineCount || rbl.lineCount != bl.lineCount) {
+            std::fprintf(stderr, "FAIL: alignment changed the wrap\n"); return 32;
+        }
+
+        // Typewriter reveal: the count limit must not reflow. Every prefix keeps
+        // the same line breaks and reveals exactly `count` clusters.
+        // countClusters() measures the unwrapped text, so it is the larger of the
+        // two: the spaces a wrap point swallows are not laid out at all.
+        const int total = countClusters(para, BaseDirection::LTR, chain, 24);
+        std::printf("  block: countClusters=%d (block total=%d)\n", total, bl.totalClusters);
+        if (total < bl.totalClusters) { std::fprintf(stderr, "FAIL: countClusters\n"); return 33; }
+        for (int n = 0; n <= bl.totalClusters; ++n) {
+            BlockOptions oc2 = o; oc2.count = n;
+            BlockLayout p = layoutBlock(para, BaseDirection::LTR, chain, 24, oc2);
+            if (p.drawnClusters != n) {
+                std::fprintf(stderr, "FAIL: reveal %d drew %d\n", n, p.drawnClusters); return 34;
+            }
+            for (int i = 0; i < p.lineCount; ++i) {
+                if (p.lines[i].byteStart != bl.lines[i].byteStart ||
+                    p.lines[i].byteEnd != bl.lines[i].byteEnd ||
+                    p.lines[i].x != bl.lines[i].x) {
+                    std::fprintf(stderr, "FAIL: reveal %d reflowed line %d\n", n, i); return 35;
+                }
+            }
+        }
+
+        // Height bound drops the lines that would cross the bottom.
+        BlockOptions oh = o;
+        oh.height = bl.lineHeight + bl.ascent + bl.descent;   // room for two lines
+        BlockLayout hbl = layoutBlock(para, BaseDirection::LTR, chain, 24, oh);
+        std::printf("  block: height-bounded -> lines=%d\n", hbl.lineCount);
+        if (hbl.lineCount != 2) { std::fprintf(stderr, "FAIL: height bound\n"); return 36; }
+    }
+
     // Manifest (fonts.json) — declared metadata, coverage without opening
     {
         auto loader = std::make_shared<DiskLoader>();

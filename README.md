@@ -72,9 +72,20 @@ shaping end-to-end.
 ## Layout
 
 - `include/glyphware/` — public headers (`Blob`, `Descriptor`, `Library`,
-  `Face`, `Shaper`, umbrella `glyphware.h`).
+  `Face`, `Shaper`, `Bidi`, `Layout`, `Registry`, `Manifest`, umbrella
+  `glyphware.h`).
 - `src/` — implementation.
 - `tests/` — smoke test.
+
+Text layout comes in two levels, both in `glyphware/Layout.h`:
+
+- `layoutLine` — one line: BiDi → face itemization → shaping → positioned
+  glyphs in visual order.
+- `layoutBlock` — flow into a rectangle: explicit newlines, greedy word /
+  per-character (CJK) wrapping with Japanese 行頭/行末禁則, alignment, a height
+  bound, and a cluster `count` limit for typewriter reveals. Wrapping is always
+  resolved for the full text before `count` is applied, so a reveal never
+  reflows.
 
 ## Status
 

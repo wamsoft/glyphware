@@ -1,26 +1,11 @@
 #include "glyphware/Layout.h"
 #include "glyphware/Shaper.h"
+#include "Utf8.h"
 
 #include <algorithm>
 
 namespace glyphware {
 namespace {
-
-// Decode one UTF-8 codepoint at byte `i`; returns byte length consumed (>=1).
-int decodeAt(std::string_view s, std::size_t i, char32_t& cp) {
-    unsigned char c = static_cast<unsigned char>(s[i]);
-    if (c < 0x80) { cp = c; return 1; }
-    int extra; char32_t v;
-    if ((c >> 5) == 0x6) { v = c & 0x1F; extra = 1; }
-    else if ((c >> 4) == 0xE) { v = c & 0x0F; extra = 2; }
-    else if ((c >> 3) == 0x1E) { v = c & 0x07; extra = 3; }
-    else { cp = c; return 1; }  // invalid lead; consume one byte
-    if (i + extra >= s.size()) { cp = c; return 1; }
-    for (int k = 0; k < extra; ++k)
-        v = (v << 6) | (static_cast<unsigned char>(s[i + 1 + k]) & 0x3F);
-    cp = v;
-    return extra + 1;
-}
 
 // A maximal span of `text` (byte range) resolved to one face.
 struct FaceSpan { std::size_t byteStart; std::size_t byteLen; Face* face; };
@@ -37,7 +22,7 @@ std::vector<FaceSpan> itemize(std::string_view run,
     std::size_t i = 0;
     while (i < run.size()) {
         char32_t cp;
-        int n = decodeAt(run, i, cp);
+        int n = utf8::decodeAt(run, i, cp);
         Face* f = resolveFace(cp, chain);
         if (!spans.empty() && spans.back().face == f)
             spans.back().byteLen += n;
