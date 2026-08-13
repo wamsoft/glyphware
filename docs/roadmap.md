@@ -31,6 +31,12 @@ split behind **swappable seams** so each can be replaced independently:
   breaker (ICU `brkitr`, or a dictionary/rule breaker built inside glyphware)
   can be dropped in later **without touching the BiDi backend** — the character
   classes and the unit splitter are the only things it replaces.
+  Width queries during the wrap come from one shaping pass per paragraph
+  (`ParaWidths`: bucket each glyph's advance by its cluster, prefix-sum, answer
+  a sub-range by subtraction). Cursive / bidirectional paragraphs keep the
+  slower per-substring measurement, because a prefix taken out of context
+  shapes differently from the same prefix shaped alone — and the alone form is
+  the one that gets drawn, since lines are shaped individually.
 - **Itemization** (splitting mixed script/style/face runs) — the fallback/run
   splitter that feeds the shaper.
 

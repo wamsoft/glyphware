@@ -229,12 +229,49 @@ struct Ctx {
     LineLayout layout(std::size_t start, std::size_t end) const {
         return layoutLine(text.substr(start, end - start), base, *chain, pixelSize);
     }
-    float measure(std::size_t start, std::size_t end) const {
-        end = trimTrailingSpaces(text, start, end);
-        if (start >= end) return 0.f;
-        return layout(start, end).width;
+};
+
+// Prefix advance table over one paragraph, built from a single shaping pass.
+//
+// The wrap loop asks for the width of a growing prefix once per unit, and once
+// more per atom when a unit overflows. Answering each of those by shaping the
+// substring reshapes the paragraph O(units) times. Cluster values are byte
+// offsets, so instead every glyph's advance can be bucketed by its cluster and
+// prefix-summed once: a width query is then a subtraction.
+//
+// Only used where it is equivalent to shaping the substring — see canUse().
+struct ParaWidths {
+    std::size_t start = 0;
+    std::vector<float> prefix;   // prefix[i] = advance of glyphs with cluster < i
+    bool usable = false;
+
+    void build(const LineLayout& ll, std::size_t paraStart, std::size_t len) {
+        start = paraStart;
+        prefix.assign(len + 1, 0.f);
+        for (const PositionedGlyph& g : ll.glyphs) {
+            if (g.cluster < len) prefix[g.cluster + 1] += g.advance;
+        }
+        for (std::size_t i = 1; i <= len; ++i) prefix[i] += prefix[i - 1];
+        usable = true;
+    }
+
+    float width(std::size_t s, std::size_t e) const {
+        return prefix[e - start] - prefix[s - start];
     }
 };
+
+// A cursive / bidirectional paragraph is measured the slow way. Shaping a
+// prefix on its own is not the same as taking that prefix out of the whole
+// paragraph there: a letter that is medial mid-paragraph becomes final at the
+// cut, with a different advance. Since each line is shaped on its own when it
+// is finally laid out, the isolated measurement is the one that matches what
+// gets drawn — so keep it for those scripts and only take the shortcut where
+// shaping is context free.
+bool paragraphIsSimple(const LineLayout& ll) {
+    for (const PositionedGlyph& g : ll.glyphs)
+        if (g.rtl) return false;
+    return true;
+}
 
 // Greedy wrap of one paragraph into lines fitting areaW. Always emits at least
 // one line (possibly empty); an oversized single unit falls back to per-atom
@@ -252,18 +289,32 @@ void wrapParagraph(const Ctx& cx, std::size_t paraStart, std::size_t paraEnd,
     std::vector<Unit> units;
     splitUnits(cx.text, paraStart, paraEnd, units);
 
+    // One shaping pass for the whole paragraph; the wrap then measures by
+    // subtraction. Falls back to per-substring shaping for cursive/BiDi text.
+    ParaWidths pw;
+    {
+        LineLayout whole = cx.layout(paraStart, paraEnd);
+        if (paragraphIsSimple(whole))
+            pw.build(whole, paraStart, paraEnd - paraStart);
+    }
+    auto measure = [&cx, &pw](std::size_t s, std::size_t e) {
+        e = trimTrailingSpaces(cx.text, s, e);
+        if (s >= e) return 0.f;
+        return pw.usable ? pw.width(s, e) : cx.layout(s, e).width;
+    };
+
     std::size_t lineStart = paraStart;
     std::size_t accepted = paraStart;
     std::vector<Atom> atoms;
     for (const Unit& u : units) {
-        const float w = cx.measure(lineStart, u.end);
+        const float w = measure(lineStart, u.end);
         if (w <= areaW || accepted == lineStart) {
             if (w <= areaW) { accepted = u.end; continue; }
             // single unit wider than the area: split it per atom
             splitAtoms(cx.text, lineStart, u.end, atoms);
             std::size_t cs = lineStart, ce = lineStart;
             for (const Atom& a : atoms) {
-                const float w2 = cx.measure(cs, a.end);
+                const float w2 = measure(cs, a.end);
                 if (w2 <= areaW || ce == cs) ce = a.end;
                 else { lines.emplace_back(cs, ce); cs = a.start; ce = a.end; }
             }
@@ -273,13 +324,13 @@ void wrapParagraph(const Ctx& cx, std::size_t paraStart, std::size_t paraEnd,
             lines.emplace_back(lineStart, accepted);
             lineStart = u.start;
             accepted = u.end;
-            const float w2 = cx.measure(lineStart, u.end);
+            const float w2 = measure(lineStart, u.end);
             if (w2 > areaW) {
                 // the unit alone overflows on its fresh line: per-atom split
                 splitAtoms(cx.text, lineStart, u.end, atoms);
                 std::size_t cs = lineStart, ce = lineStart;
                 for (const Atom& a : atoms) {
-                    const float w3 = cx.measure(cs, a.end);
+                    const float w3 = measure(cs, a.end);
                     if (w3 <= areaW || ce == cs) ce = a.end;
                     else { lines.emplace_back(cs, ce); cs = a.start; ce = a.end; }
                 }
