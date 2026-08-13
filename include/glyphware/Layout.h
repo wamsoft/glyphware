@@ -102,6 +102,10 @@ struct BlockLine {
     float y = 0.f;                 // baseline offset from the block's top
     std::size_t byteStart = 0;
     std::size_t byteEnd = 0;
+    std::size_t revealEnd = 0;     // where the kept clusters end (== byteEnd
+                                   // when `count` hid nothing). A consumer that
+                                   // re-renders the text instead of using
+                                   // `layout` cuts the string here.
     int clusters = 0;              // clusters kept after the `count` limit
     int totalClusters = 0;         // clusters this line has without the limit
 };

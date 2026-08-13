@@ -253,6 +253,17 @@ int main(int argc, char** argv) {
                     p.lines[i].x != bl.lines[i].x) {
                     std::fprintf(stderr, "FAIL: reveal %d reflowed line %d\n", n, i); return 35;
                 }
+                // revealEnd must stay inside the line and grow monotonically
+                // with the count (a consumer cuts the source string there).
+                auto const& l = p.lines[i];
+                if (l.revealEnd < l.byteStart || l.revealEnd > l.byteEnd) {
+                    std::fprintf(stderr, "FAIL: reveal %d line %d revealEnd out of range\n", n, i);
+                    return 37;
+                }
+                if (l.clusters == l.totalClusters && l.revealEnd != l.byteEnd) {
+                    std::fprintf(stderr, "FAIL: reveal %d line %d full but cut\n", n, i);
+                    return 38;
+                }
             }
         }
 

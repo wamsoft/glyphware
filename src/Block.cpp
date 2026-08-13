@@ -381,6 +381,7 @@ BlockLayout layoutBlock(std::string_view utf8, BaseDirection base,
     const int areaW = static_cast<int>(opts.width);
     int remaining = opts.count < 0 ? INT_MAX : opts.count;
     int lineIndex = 0;
+    std::vector<std::uint32_t> sorted;
 
     for (const Range& lr : lines) {
         const int top = lineIndex * lineH;
@@ -390,12 +391,18 @@ BlockLayout layoutBlock(std::string_view utf8, BaseDirection base,
         BlockLine bl;
         bl.byteStart = lr.first;
         bl.byteEnd = trimTrailingSpaces(utf8, lr.first, lr.second);
+        bl.revealEnd = bl.byteEnd;
         bl.y = static_cast<float>(top + ascent);
 
         if (bl.byteStart < bl.byteEnd) {
             bl.layout = cx.layout(bl.byteStart, bl.byteEnd);
-            bl.totalClusters = lineClusterCount(bl.layout);
+            collectClusters(bl.layout, sorted);
+            bl.totalClusters = static_cast<int>(sorted.size());
             const int allowed = bl.totalClusters < remaining ? bl.totalClusters : remaining;
+            if (allowed < bl.totalClusters) {
+                // the first hidden cluster starts the hidden remainder
+                bl.revealEnd = bl.byteStart + sorted[static_cast<std::size_t>(allowed)];
+            }
             bl.clusters = limitClusters(bl.layout, allowed);
             remaining -= bl.clusters;
             out.drawnClusters += bl.clusters;
