@@ -90,6 +90,50 @@ struct VarCoord {
 //              hinted advances quantize and text drifts as the line grows.
 enum class Hinting { Hinted, Unhinted };
 
+// ---- rasterization ---------------------------------------------------------
+// Turning an outline into pixels is the one part every consumer needs and the
+// one part that is easy to get subtly wrong (AA quality, stroking, grid fit).
+// glyphware does it with FreeType's own rasterizer/stroker, so a consumer only
+// has to composite the returned 8-bit coverage mask with whatever color, and
+// text drawn by different parts of the host looks identical.
+
+// Row-major 2x3 affine, mapping FONT UNITS (y-up) to pixels (y-up):
+//   x' = xx*x + xy*y + dx ,  y' = yx*x + yy*y + dy
+// A plain size request is {size/upem, 0, 0, 0, size/upem, 0}; oblique, condensed
+// and mirrored text just fold their factors in here. Sub-pixel positioning goes
+// into dx/dy.
+struct Transform2D {
+    float xx = 1.f, xy = 0.f, dx = 0.f;
+    float yx = 0.f, yy = 1.f, dy = 0.f;
+};
+
+enum class StrokeJoin { Miter, Round, Bevel };
+enum class StrokeCap { Butt, Round, Square };
+
+struct RenderParams {
+    Transform2D transform;
+    bool bold = false;            // synthetic emboldening
+    bool italic = false;          // synthetic oblique
+    // 0 = fill the outline. > 0 = stroke it (in pixels) and fill the stroke —
+    // that is the outlined-text look, where the glyph interior stays empty.
+    float strokeWidth = 0.f;
+    StrokeJoin join = StrokeJoin::Round;
+    StrokeCap cap = StrokeCap::Round;
+    float miterLimit = 4.f;
+};
+
+// 8-bit coverage (0..255). `left`/`top` are the offsets from the pen origin to
+// the mask's left column / top row, in pixels with y UP (FreeType convention:
+// top is positive above the baseline).
+struct GlyphMask {
+    int left = 0;
+    int top = 0;
+    int width = 0;
+    int rows = 0;
+    int pitch = 0;
+    const std::uint8_t* buffer = nullptr;   // valid until the next render call
+};
+
 // ---- color glyphs (COLR v0 / v1) -------------------------------------------
 // A COLR glyph is a paint graph: nested transforms over layers that each fill a
 // plain outline glyph with a solid color or a gradient. glyphware walks that
@@ -199,6 +243,13 @@ public:
     // returned buffer is owned by this Face and valid until the next render call.
     bool glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out, bool bold = false, bool italic = false);
 
+    // Rasterize `gid` into an 8-bit coverage mask. The transform carries the
+    // size (font units → pixels), so setPixelSize() is irrelevant here and any
+    // affine — oblique, condensed, mirrored, sub-pixel offset — is exact rather
+    // than approximated afterwards. false when the glyph has no outline (a
+    // bitmap-only color glyph) or the mask would be empty.
+    bool renderGlyphMask(GlyphId gid, const RenderParams& params, GlyphMask& out);
+
     // Flatten the COLR (v0/v1) paint graph of `gid` into draw layers, back to
     // front. Set the pixel size first: the root transform carries the font-unit
     // → pixel scale, and `box` (the glyph's clip box) comes back in pixels.
@@ -241,6 +292,9 @@ private:
     // owned normalized bitmap (mono->gray / num_grays->256 / scaled color strike);
     // glyphBitmap() points GlyphBitmap::buffer here, valid until the next call.
     std::vector<std::uint8_t> bmpBuf_;
+    // separate storage for renderGlyphMask(), so a consumer can hold a mask and
+    // a color bitmap at the same time.
+    std::vector<std::uint8_t> maskBuf_;
 
     void resolveMetadata();
 };
