@@ -238,7 +238,8 @@ GlyphId Face::glyphIndex(char32_t cp) const {
     return FT_Get_Char_Index(face_, static_cast<FT_ULong>(cp));
 }
 
-bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out, bool bold, bool italic) const {
+bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out, bool bold, bool italic,
+                        Hinting hinting) const {
     LibraryLock lock(*lib_);
     // For scalable fonts ignore embedded bitmap strikes so the advance is the
     // OUTLINE advance — consistent with glyphBitmap() (which renders outlines for
@@ -249,6 +250,11 @@ bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out, bool bold, bool italic) 
     // fonts (CBDT color emoji) keep the strike and are scaled below.
     FT_Int32 flags = FT_LOAD_DEFAULT;
     if (face_->face_flags & FT_FACE_FLAG_SCALABLE) flags |= FT_LOAD_NO_BITMAP;
+    if (hinting == Hinting::Unhinted) {
+        // linear (unrounded) advances for layout engines; also drop the hmtx
+        // global-advance shortcut so the value comes from the scaled glyph.
+        flags |= FT_LOAD_NO_HINTING | FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH;
+    }
     if (FT_Load_Glyph(face_, gid, flags) != 0) return false;
     FT_GlyphSlot slot = face_->glyph;
     // apply synthetic bold/italic so the advance/metrics match glyphBitmap():
@@ -275,6 +281,30 @@ bool Face::glyphMetrics(GlyphId gid, GlyphMetrics& out, bool bold, bool italic) 
     return true;
 }
 
+bool Face::glyphMetricsUnscaled(GlyphId gid, GlyphMetrics& out, bool bold, bool italic) const {
+    if ((face_->face_flags & FT_FACE_FLAG_SCALABLE) == 0) return false;
+    LibraryLock lock(*lib_);
+    if (FT_Load_Glyph(face_, gid,
+                      FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP) != 0)
+        return false;
+    FT_GlyphSlot slot = face_->glyph;
+    if (slot->format == FT_GLYPH_FORMAT_OUTLINE) {
+        // same synthetic styling as glyphOutline(), so the advance matches the
+        // shape the caller will draw
+        if (bold) FT_GlyphSlot_Embolden(slot);
+        if (italic) FT_GlyphSlot_Oblique(slot);
+    }
+    const FT_Glyph_Metrics& m = slot->metrics;
+    // FT_LOAD_NO_SCALE keeps everything in font units (no 26.6 fixed point).
+    out.advanceX = static_cast<float>(slot->advance.x);
+    out.advanceY = static_cast<float>(slot->advance.y);
+    out.bearingX = static_cast<float>(m.horiBearingX);
+    out.bearingY = static_cast<float>(m.horiBearingY);
+    out.width = static_cast<float>(m.width);
+    out.height = static_cast<float>(m.height);
+    return true;
+}
+
 float Face::fixedStrikeScale() const {
     if ((face_->face_flags & FT_FACE_FLAG_SCALABLE) == 0 && pixelSize_ > 0 &&
         face_->size && face_->size->metrics.y_ppem > 0) {
@@ -287,6 +317,8 @@ LineMetrics Face::lineMetrics() const {
     LineMetrics lm;
     lm.unitsPerEm = static_cast<float>(face_->units_per_EM);
     lm.ascenderUnits = static_cast<float>(face_->ascender);
+    lm.descenderUnits = static_cast<float>(face_->descender);   // negative (FT convention)
+    lm.heightUnits = static_cast<float>(face_->height);
     if (pixelSize_ > 0) {
         const FT_Size_Metrics& sm = face_->size->metrics;
         lm.ppemY = static_cast<float>(sm.y_ppem);
@@ -315,9 +347,19 @@ LineMetrics Face::lineMetrics() const {
 }
 
 namespace {
-struct DecompCtx { OutlineSink* sink; };
+// FT_Outline_Decompose has no "end of contour" callback — a contour is implicitly
+// closed when the next move_to arrives (or the outline ends). Track that here so
+// the sink sees an explicit close() per contour: a consumer that STROKES the path
+// (rather than only filling it) needs the closing segment to exist.
+struct DecompCtx {
+    OutlineSink* sink;
+    bool open = false;
+};
 int mv(const FT_Vector* to, void* u) {
-    static_cast<DecompCtx*>(u)->sink->moveTo(static_cast<float>(to->x), static_cast<float>(to->y));
+    auto* c = static_cast<DecompCtx*>(u);
+    if (c->open) c->sink->close();
+    c->open = true;
+    c->sink->moveTo(static_cast<float>(to->x), static_cast<float>(to->y));
     return 0;
 }
 int ln(const FT_Vector* to, void* u) {
@@ -351,8 +393,10 @@ bool Face::glyphOutline(GlyphId gid, OutlineSink& sink, bool bold, bool italic) 
     funcs.cubic_to = cb;
     funcs.shift = 0;
     funcs.delta = 0;
-    DecompCtx ctx{&sink};
-    return FT_Outline_Decompose(&face_->glyph->outline, &funcs, &ctx) == 0;
+    DecompCtx ctx{&sink, false};
+    if (FT_Outline_Decompose(&face_->glyph->outline, &funcs, &ctx) != 0) return false;
+    if (ctx.open) sink.close();
+    return true;
 }
 
 void Face::setTransform(double xx, double xy, double yx, double yy) {
@@ -368,6 +412,78 @@ void Face::setTransform(double xx, double xy, double yx, double yy) {
 void Face::clearTransform() {
     LibraryLock lock(*lib_);
     FT_Set_Transform(face_, nullptr, nullptr);
+}
+
+namespace {
+// RAII for FT_Get_MM_Var's allocation (FT_Done_MM_Var needs the library).
+struct MMVar {
+    FT_Library lib;
+    FT_MM_Var* var = nullptr;
+    explicit MMVar(FT_Library l, FT_Face f) : lib(l) {
+        if (FT_Get_MM_Var(f, &var) != 0) var = nullptr;
+    }
+    ~MMVar() { if (var) FT_Done_MM_Var(lib, var); }
+    explicit operator bool() const { return var != nullptr; }
+};
+constexpr float kFixedToFloat = 1.0f / 65536.0f;
+} // namespace
+
+bool Face::setVariations(const std::vector<VarCoord>& coords) {
+    LibraryLock lock(*lib_);
+    MMVar mm(lib_->ft(), face_);
+    if (!mm) return false;
+
+    std::vector<FT_Fixed> design(mm.var->num_axis);
+    if (FT_Get_Var_Design_Coordinates(face_, mm.var->num_axis, design.data()) != 0) {
+        for (FT_UInt i = 0; i < mm.var->num_axis; ++i) design[i] = mm.var->axis[i].def;
+    }
+
+    bool matched = false;
+    for (const VarCoord& c : coords) {
+        for (FT_UInt i = 0; i < mm.var->num_axis; ++i) {
+            if (mm.var->axis[i].tag != static_cast<FT_ULong>(c.tag)) continue;
+            const float lo = mm.var->axis[i].minimum * kFixedToFloat;
+            const float hi = mm.var->axis[i].maximum * kFixedToFloat;
+            const float v = std::min(std::max(c.value, lo), hi);
+            design[i] = static_cast<FT_Fixed>(std::lround(v * 65536.0));
+            matched = true;
+            break;
+        }
+    }
+    if (!matched) return false;
+    if (FT_Set_Var_Design_Coordinates(face_, mm.var->num_axis, design.data()) != 0) return false;
+    // the HarfBuzz font mirrors the FT face, so it has to be told the face moved
+    if (hb_) hb_ft_font_changed(hb_);
+    return true;
+}
+
+std::vector<VarCoord> Face::variations() const {
+    std::vector<VarCoord> out;
+    LibraryLock lock(*lib_);
+    MMVar mm(lib_->ft(), face_);
+    if (!mm) return out;
+    std::vector<FT_Fixed> design(mm.var->num_axis);
+    if (FT_Get_Var_Design_Coordinates(face_, mm.var->num_axis, design.data()) != 0) return out;
+    out.reserve(mm.var->num_axis);
+    for (FT_UInt i = 0; i < mm.var->num_axis; ++i)
+        out.push_back({static_cast<std::uint32_t>(mm.var->axis[i].tag),
+                       design[i] * kFixedToFloat});
+    return out;
+}
+
+bool Face::axisRange(std::uint32_t tag, float& minValue, float& defaultValue,
+                     float& maxValue) const {
+    LibraryLock lock(*lib_);
+    MMVar mm(lib_->ft(), face_);
+    if (!mm) return false;
+    for (FT_UInt i = 0; i < mm.var->num_axis; ++i) {
+        if (mm.var->axis[i].tag != static_cast<FT_ULong>(tag)) continue;
+        minValue = mm.var->axis[i].minimum * kFixedToFloat;
+        defaultValue = mm.var->axis[i].def * kFixedToFloat;
+        maxValue = mm.var->axis[i].maximum * kFixedToFloat;
+        return true;
+    }
+    return false;
 }
 
 bool Face::glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out, bool bold, bool italic) {
