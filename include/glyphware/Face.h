@@ -90,6 +90,52 @@ struct VarCoord {
 //              hinted advances quantize and text drifts as the line grows.
 enum class Hinting { Hinted, Unhinted };
 
+// ---- color glyphs (COLR v0 / v1) -------------------------------------------
+// A COLR glyph is a paint graph: nested transforms over layers that each fill a
+// plain outline glyph with a solid color or a gradient. glyphware walks that
+// graph and flattens it into a back-to-front list of draw operations, so a
+// consumer can render color glyphs with its OWN rasterizer (ThorVG, Skia, …)
+// instead of taking FreeType's composited bitmap — which is what a vector text
+// engine wants, and what FreeType's own renderer cannot give for COLRv1.
+//
+// Coordinates stay in FreeType's space: outlines come from glyphOutline() in
+// font units (y-up), and `transform` / gradient points are in the same y-up
+// space at the face's CURRENT PIXEL SIZE (call setPixelSize() first — the root
+// transform carries the font-unit → pixel scale).
+
+struct ColorStop {
+    float offset = 0.f;          // 0..1 along the gradient
+    std::uint8_t r = 0, g = 0, b = 0, a = 255;
+};
+
+enum class PaintKind { Solid, LinearGradient, RadialGradient };
+
+struct ColorPaint {
+    PaintKind kind = PaintKind::Solid;
+    std::uint8_t r = 0, g = 0, b = 0, a = 255;   // Solid
+    // LinearGradient: (x0,y0)->(x1,y1).  RadialGradient: focal (x0,y0,r0) and
+    // center (x1,y1,r1).
+    float x0 = 0.f, y0 = 0.f, x1 = 0.f, y1 = 0.f;
+    float r0 = 0.f, r1 = 0.f;
+    std::vector<ColorStop> stops;                // gradients
+};
+
+// One drawable layer: take the outline of `gid`, map it through `transform`,
+// fill it with `paint`. Layers are emitted back to front (simple SRC_OVER).
+// transform is row-major 2x3: {xx, xy, dx, yx, yy, dy}
+//   x' = xx*x + xy*y + dx ,  y' = yx*x + yy*y + dy
+struct ColorLayer {
+    GlyphId gid = 0;
+    float transform[6] = {1.f, 0.f, 0.f, 0.f, 1.f, 0.f};
+    ColorPaint paint;
+};
+
+// COLR glyph clip box at the current pixel size (y-up, pixels).
+struct ColorGlyphBox {
+    float xMin = 0.f, yMin = 0.f, xMax = 0.f, yMax = 0.f;
+    bool valid = false;
+};
+
 class Face {
 public:
     // Open face `index` from `blob`. Returns nullptr on failure. The blob is
@@ -152,6 +198,14 @@ public:
     // synthetic emboldening / obliquing (ignored for color bitmaps). The
     // returned buffer is owned by this Face and valid until the next render call.
     bool glyphBitmap(GlyphId gid, bool color, GlyphBitmap& out, bool bold = false, bool italic = false);
+
+    // Flatten the COLR (v0/v1) paint graph of `gid` into draw layers, back to
+    // front. Set the pixel size first: the root transform carries the font-unit
+    // → pixel scale, and `box` (the glyph's clip box) comes back in pixels.
+    // false when the glyph has no color paint graph — use glyphBitmap() then
+    // (CBDT/sbix strikes are bitmaps, not paint graphs).
+    bool colorLayers(GlyphId gid, std::vector<ColorLayer>& out,
+                     ColorGlyphBox* box = nullptr) const;
 
     // Set a 2x2 transform (FreeType y-up coords) applied to subsequently loaded
     // glyphs — for rotated/sheared text. clearTransform() resets to identity.

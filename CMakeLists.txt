@@ -62,6 +62,7 @@ FetchContent_MakeAvailable(picojson)
 add_library(glyphware
   src/Library.cpp
   src/Face.cpp
+  src/ColorGlyph.cpp
   src/Shaper.cpp
   src/Registry.cpp
   src/Bidi_sheenbidi.cpp
