@@ -168,7 +168,7 @@ void Face::resolveMetadata() {
     d.monospace = FT_IS_FIXED_WIDTH(f) != 0;
     d.scalable = FT_IS_SCALABLE(f) != 0;
 
-    // variable-font axes
+    // variable-font axes + named instances (fvar named styles)
     if (FT_HAS_MULTIPLE_MASTERS(f)) {
         FT_MM_Var* mm = nullptr;
         if (FT_Get_MM_Var(f, &mm) == 0 && mm) {
@@ -180,6 +180,17 @@ void Face::resolveMetadata() {
                 ax.maxValue = mm->axis[i].maximum / 65536.0f;
                 if (mm->axis[i].name) ax.name = reinterpret_cast<const char*>(mm->axis[i].name);
                 d.axes.push_back(std::move(ax));
+            }
+            for (FT_UInt i = 0; i < mm->num_namedstyles; ++i) {
+                const FT_Var_Named_Style& ns = mm->namedstyle[i];
+                NamedInstance inst;
+                inst.name = pickName(f, static_cast<FT_UShort>(ns.strid));
+                if (inst.name.empty()) continue;   // unnamed preset is unusable by name
+                inst.coords.reserve(mm->num_axis);
+                for (FT_UInt a = 0; a < mm->num_axis; ++a)
+                    inst.coords.emplace_back(static_cast<std::uint32_t>(mm->axis[a].tag),
+                                             ns.coords[a] / 65536.0f);
+                d.namedInstances.push_back(std::move(inst));
             }
             FT_Done_MM_Var(lib_->ft(), mm);
         }

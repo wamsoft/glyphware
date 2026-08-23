@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace glyphware {
@@ -38,6 +39,14 @@ struct VarAxis {
     std::string name;
 };
 
+// A named instance (fvar named style): a designer-provided preset of axis
+// values with a subfamily name (e.g. "SemiBold", "Condensed Bold").
+struct NamedInstance {
+    std::string name;
+    // (axis tag, design value) in fvar axis order; one entry per axis.
+    std::vector<std::pair<std::uint32_t, float>> coords;
+};
+
 // Immutable metadata for one face (one font file + faceIndex). Populated lazily:
 // declared entries carry only what the host declared until first real parse.
 struct FontDescriptor {
@@ -69,6 +78,7 @@ struct FontDescriptor {
 
     // variable font
     std::vector<VarAxis> axes;
+    std::vector<NamedInstance> namedInstances;   // fvar named styles (empty for non-VF)
 
     bool metadataResolved = false;      // false = declared-only, not yet FT-parsed
     bool styleDeclared = false;         // weight/width/slant/color/monospace came from a
