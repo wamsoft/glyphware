@@ -22,6 +22,7 @@
 #include "Registry.h"
 #include "Bidi.h"
 #include "Layout.h"
+#include "Vertical.h"
 #include "Manifest.h"
 
 #endif // GLYPHWARE_H

@@ -16,8 +16,14 @@ void shapeRun(Face& face, std::string_view utf8, const ShapeOptions& opts,
 
     if (opts.guessSegmentProperties) {
         hb_buffer_guess_segment_properties(buf);
+        // The guess derives the direction from the script, so it can never
+        // produce TTB; an explicit vertical request has to win over it.
+        if (opts.direction == Direction::TTB)
+            hb_buffer_set_direction(buf, HB_DIRECTION_TTB);
     } else {
-        hb_buffer_set_direction(buf, opts.direction == Direction::RTL
+        hb_buffer_set_direction(buf, opts.direction == Direction::TTB
+                                          ? HB_DIRECTION_TTB
+                                    : opts.direction == Direction::RTL
                                           ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
     }
     if (!opts.script.empty())

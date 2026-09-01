@@ -68,6 +68,7 @@ add_library(glyphware
   src/Registry.cpp
   src/Bidi_sheenbidi.cpp
   src/Layout.cpp
+  src/Vertical.cpp
   src/Block.cpp
   src/Manifest.cpp
 )

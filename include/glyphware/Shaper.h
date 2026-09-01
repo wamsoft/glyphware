@@ -17,7 +17,10 @@
 
 namespace glyphware {
 
-enum class Direction { LTR, RTL };
+// TTB is the vertical (top-to-bottom) writing direction: HarfBuzz then applies
+// the `vert` / `vrt2` vertical form substitutions and takes advances/origins
+// from `vmtx` / `VORG`, which is what upright CJK runs need. See Vertical.h.
+enum class Direction { LTR, RTL, TTB };
 
 struct ShapedGlyph {
     GlyphId gid = 0;
@@ -32,6 +35,8 @@ struct ShapeOptions {
     std::string language;   // BCP47 (e.g. "ja", "zh-Hans"); "" = guess
     std::string script;     // ISO-15924 (e.g. "Hani"); "" = guess
     Direction direction = Direction::LTR;
+    // Guess script/language/direction from the content. `direction` is still
+    // honoured for TTB, which no guess would ever produce.
     bool guessSegmentProperties = true;  // parity with the current ThorVG path
 };
 
