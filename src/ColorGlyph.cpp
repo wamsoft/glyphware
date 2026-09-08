@@ -12,6 +12,8 @@
 #include FT_COLOR_H
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 
 namespace glyphware {
@@ -54,6 +56,42 @@ bool Face::colorLayers(GlyphId gid, std::vector<ColorLayer>& out, ColorGlyphBox*
     // opaque black here — the consumer overrides it with its own fill color.
     FT_Color* palette = nullptr;
     FT_Palette_Select(face_, 0, &palette);
+
+    // COLR v0 のレイヤ（BaseGlyphRecord）があればそれを使う。単色レイヤの並びで、v1 のペイントグラフより単純で確実。
+    // 多くのカラーフォント（Segoe UI Emoji など）は互換のために v0 レイヤも持っている
+    {
+        out.clear();
+        FT_LayerIterator it;
+        it.p = nullptr;
+        FT_UInt layerGid = 0, colorIndex = 0;
+        const float upem = face_->units_per_EM > 0 ? static_cast<float>(face_->units_per_EM) : 1000.f;
+        const float ppem = face_->size ? static_cast<float>(face_->size->metrics.x_ppem) : upem;
+        const float scale = ppem / upem;   // フォントユニット → 現在のピクセルサイズ（v1 の root transform と同じ意味）
+        while (FT_Get_Color_Glyph_Layer(face_, gid, &layerGid, &colorIndex, &it)) {
+            ColorLayer layer;
+            layer.gid = layerGid;
+            layer.transform[0] = scale; layer.transform[4] = scale;
+            layer.paint.kind = PaintKind::Solid;
+            if (palette && colorIndex != 0xFFFF) {
+                const FT_Color c = palette[colorIndex];
+                layer.paint.r = c.red; layer.paint.g = c.green; layer.paint.b = c.blue; layer.paint.a = c.alpha;
+            } else {
+                layer.paint.r = layer.paint.g = layer.paint.b = 0; layer.paint.a = 255;   // 前景色（消費側が置き換える）
+            }
+            out.push_back(std::move(layer));
+        }
+        if (!out.empty()) {
+            if (box) {
+                FT_ClipBox cb;
+                box->valid = FT_Get_Color_Glyph_ClipBox(face_, gid, &cb) != 0;
+                if (box->valid) {
+                    box->xMin = fixed16(cb.bottom_left.x); box->yMin = fixed16(cb.bottom_left.y);
+                    box->xMax = fixed16(cb.top_right.x);   box->yMax = fixed16(cb.top_right.y);
+                }
+            }
+            return true;
+        }
+    }
 
     const auto resolveColor = [&](const FT_ColorIndex& ci, ColorPaint& paint) {
         std::uint8_t r = 0, g = 0, b = 0, a = 255;
