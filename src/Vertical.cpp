@@ -1,6 +1,7 @@
 #include "glyphware/Vertical.h"
 #include "glyphware/Shaper.h"
 #include "Utf8.h"
+#include "Replacement.h"
 
 #include <algorithm>
 
@@ -51,8 +52,9 @@ constexpr Range kUprightRanges[] = {
     {0x30000, 0x3FFFD}, // CJK Unified Ideographs Extension G and up
 };
 
-Face* resolveFace(char32_t cp, const std::vector<std::shared_ptr<Face>>& chain) {
-    for (auto& f : chain) if (f && f->covers(cp)) return f.get();
+Face* resolveFace(char32_t cp, const std::vector<std::shared_ptr<Face>>& chain, bool& missing) {
+    for (auto& f : chain) if (f && f->covers(cp)) { missing = false; return f.get(); }
+    missing = !isDefaultIgnorable(cp);
     return chain.empty() ? nullptr : chain[0].get();
 }
 
@@ -62,6 +64,7 @@ struct VerticalSpan {
     std::size_t byteLen;
     Face* face;
     bool upright;
+    bool missing;   // no chain face covers these: drawn as replacement glyphs
 };
 
 std::vector<VerticalSpan> itemizeVertical(std::string_view text,
@@ -72,14 +75,16 @@ std::vector<VerticalSpan> itemizeVertical(std::string_view text,
     while (i < text.size()) {
         char32_t cp;
         int n = utf8::decodeAt(text, i, cp);
-        Face* f = resolveFace(cp, chain);
+        bool missing = false;
+        Face* f = resolveFace(cp, chain, missing);
         bool upright = mode == TextOrientation::Upright  ? true
                      : mode == TextOrientation::Sideways ? false
                      : charOrientation(cp) == CharOrientation::Upright;
-        if (!spans.empty() && spans.back().face == f && spans.back().upright == upright)
+        if (!spans.empty() && spans.back().face == f && spans.back().upright == upright &&
+            spans.back().missing == missing)
             spans.back().byteLen += n;
         else
-            spans.push_back({i, static_cast<std::size_t>(n), f, upright});
+            spans.push_back({i, static_cast<std::size_t>(n), f, upright, missing});
         i += n;
     }
     return spans;
@@ -123,7 +128,9 @@ VerticalLineLayout layoutVerticalLine(std::string_view utf8,
         opts.guessSegmentProperties = true;
         opts.direction = span.upright ? Direction::TTB : Direction::LTR;
         shaped.clear();
-        shapeRun(*span.face, spanText, opts, shaped);
+        Face* face = span.face;
+        if (span.missing) detail::shapeReplacement(spanText, opts, chain, face, shaped);
+        else shapeRun(*span.face, spanText, opts, shaped);
         if (shaped.empty()) continue;
 
         // A sideways run keeps its Latin baseline, which after the 90 degree tip
@@ -131,7 +138,7 @@ VerticalLineLayout layoutVerticalLine(std::string_view utf8,
         // descent straddle the column centre instead.
         float baselineU = 0.f, ascent = 0.f, descent = 0.f;
         if (!span.upright) {
-            const LineMetrics lm = span.face->lineMetrics();
+            const LineMetrics lm = face->lineMetrics();
             const float upem = (lm.unitsPerEm > 0.f) ? lm.unitsPerEm : 1000.f;
             ascent = lm.ascenderUnits / upem * size;      // positive
             descent = -lm.descenderUnits / upem * size;   // positive
@@ -161,7 +168,7 @@ VerticalLineLayout layoutVerticalLine(std::string_view utf8,
             for (std::size_t k = i; k <= j; ++k) {
                 const ShapedGlyph& g = shaped[k];
                 VerticalGlyph vg;
-                vg.face = span.face;
+                vg.face = face;
                 vg.gid = g.gid;
                 vg.cluster = static_cast<std::uint32_t>(span.byteStart + g.cluster);
 

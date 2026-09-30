@@ -45,6 +45,11 @@ struct LineLayout {
     float descent = 0.f;
 };
 
+// True for characters that render as nothing (controls, joiners, variation
+// selectors, ...). Layout draws characters no chain face covers as U+FFFD (or
+// '?' when no face has U+FFFD), except these, which produce no glyph.
+bool isDefaultIgnorable(char32_t cp);
+
 // Lay out one line. `chain` is the fallback order tried per codepoint; chain[0]
 // is the primary (used for line metrics and for uncovered codepoints → .notdef).
 // All chain faces are set to `pixelSize`.

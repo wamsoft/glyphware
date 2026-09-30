@@ -1,17 +1,20 @@
 #include "glyphware/Layout.h"
 #include "glyphware/Shaper.h"
 #include "Utf8.h"
+#include "Replacement.h"
 
 #include <algorithm>
 
 namespace glyphware {
 namespace {
 
-// A maximal span of `text` (byte range) resolved to one face.
-struct FaceSpan { std::size_t byteStart; std::size_t byteLen; Face* face; };
+// A maximal span of `text` (byte range) resolved to one face. `missing` spans
+// hold characters no chain face covers; they are drawn as replacement glyphs.
+struct FaceSpan { std::size_t byteStart; std::size_t byteLen; Face* face; bool missing; };
 
-Face* resolveFace(char32_t cp, const std::vector<std::shared_ptr<Face>>& chain) {
-    for (auto& f : chain) if (f && f->covers(cp)) return f.get();
+Face* resolveFace(char32_t cp, const std::vector<std::shared_ptr<Face>>& chain, bool& missing) {
+    for (auto& f : chain) if (f && f->covers(cp)) { missing = false; return f.get(); }
+    missing = !isDefaultIgnorable(cp);
     return chain.empty() ? nullptr : chain[0].get();
 }
 
@@ -23,11 +26,12 @@ std::vector<FaceSpan> itemize(std::string_view run,
     while (i < run.size()) {
         char32_t cp;
         int n = utf8::decodeAt(run, i, cp);
-        Face* f = resolveFace(cp, chain);
-        if (!spans.empty() && spans.back().face == f)
+        bool missing = false;
+        Face* f = resolveFace(cp, chain, missing);
+        if (!spans.empty() && spans.back().face == f && spans.back().missing == missing)
             spans.back().byteLen += n;
         else
-            spans.push_back({i, static_cast<std::size_t>(n), f});
+            spans.push_back({i, static_cast<std::size_t>(n), f, missing});
         i += n;
     }
     return spans;
@@ -62,10 +66,12 @@ LineLayout layoutLine(std::string_view utf8, BaseDirection base,
             // Guess script/language from content; direction matches this run.
             opts.guessSegmentProperties = true;
             shaped.clear();
-            shapeRun(*span.face, spanText, opts, shaped);
+            Face* face = span.face;
+            if (span.missing) detail::shapeReplacement(spanText, opts, chain, face, shaped);
+            else shapeRun(*span.face, spanText, opts, shaped);
             for (const ShapedGlyph& g : shaped) {
                 PositionedGlyph pg;
-                pg.face = span.face;
+                pg.face = face;
                 pg.gid = g.gid;
                 pg.x = penX;
                 pg.y = 0.f;
