@@ -330,6 +330,10 @@ LineMetrics Face::lineMetrics() const {
     lm.ascenderUnits = static_cast<float>(face_->ascender);
     lm.descenderUnits = static_cast<float>(face_->descender);   // negative (FT convention)
     lm.heightUnits = static_cast<float>(face_->height);
+    if (auto* os2t = static_cast<TT_OS2*>(FT_Get_Sfnt_Table(face_, FT_SFNT_OS2));
+        os2t && os2t->version != 0xFFFF) {
+        lm.typoAscenderUnits = static_cast<float>(os2t->sTypoAscender);
+    }
     if (pixelSize_ > 0) {
         const FT_Size_Metrics& sm = face_->size->metrics;
         lm.ppemY = static_cast<float>(sm.y_ppem);

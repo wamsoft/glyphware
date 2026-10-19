@@ -41,6 +41,7 @@ struct LineMetrics {
     float lineGap = 0.f;
     float unitsPerEm = 0.f;
     float ascenderUnits = 0.f;  // raw FT_FaceRec::ascender in font units (unscaled)
+    float typoAscenderUnits = 0.f; // OS/2 sTypoAscender in font units (0 when there is no OS/2 table)
     float descenderUnits = 0.f; // raw FT_FaceRec::descender in font units (negative, FT convention)
     float heightUnits = 0.f;    // raw FT_FaceRec::height in font units (baseline-to-baseline)
     float ppemY = 0.f;          // active vertical pixels-per-EM (size->metrics.y_ppem)
